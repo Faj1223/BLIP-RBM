@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 
-class RBM(nn.Module):
-    def __init__(self, visible_dim, hidden_dim):
-        super(RBM, self).__init__()
+class GaussianBinaryRBM(nn.Module):
+    def __init__(self, visible_dim, hidden_dim, sigma):
+        super(GaussianBinaryRBM, self).__init__()
         self.visible_dim = visible_dim
         self.hidden_dim = hidden_dim
+        self.sigma = sigma
 
-        # Poids de connexion entre couches visibles et cachées
+        # Poids de connexion entre les couches visibles et cachées
         self.W = nn.Parameter(torch.randn(hidden_dim, visible_dim) * 0.01)
         self.v_bias = nn.Parameter(torch.zeros(visible_dim))  # Biais visibles
         self.h_bias = nn.Parameter(torch.zeros(hidden_dim))  # Biais cachés
@@ -18,9 +19,10 @@ class RBM(nn.Module):
         return torch.bernoulli(p_h_given_v)
 
     def sample_v(self, h):
-        """Échantillonne la couche visible à partir des cachées"""
-        p_v_given_h = torch.sigmoid(torch.matmul(h, self.W) + self.v_bias)
-        return torch.bernoulli(p_v_given_h)
+        """Échantillonne la couche visible à partir des cachées (distribution gaussienne)"""
+        # On suppose que les visibles sont normalement distribuées, on échantillonne à partir de la normale
+        mean_v_given_h = torch.matmul(h, self.W) + self.v_bias
+        return mean_v_given_h + self.sigma*torch.randn_like(mean_v_given_h)  # Ajoute un bruit gaussien pour l'échantillonnage
 
     def contrastive_divergence(self, v0, k=1, lr=0.01):
         """Applique le Contraste de Divergence CD-k pour l'apprentissage"""
