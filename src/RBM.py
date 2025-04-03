@@ -4,7 +4,7 @@ from torch.func import vmap
 
 
 class GaussianBinaryRBM(nn.Module):
-    def __init__(self, visible_dim, hidden_dim, sigma = 0.1):
+    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01):
         super(GaussianBinaryRBM, self).__init__()
         self.visible_dim = visible_dim
         self.hidden_dim = hidden_dim
@@ -19,6 +19,13 @@ class GaussianBinaryRBM(nn.Module):
         self.v_bias = nn.Parameter(torch.zeros(visible_dim, device=device))  # Biais visibles
         self.h_bias = nn.Parameter(torch.zeros(hidden_dim, device=device))   # Biais cachés
     
+        self.lr_f = lr_f  # Taux d'apprentissage des paramètres rapides
+        self.weight_decay_f = weight_decay_f  # Décroissance des paramètres rapides
+        
+        # Paramètres rapides (fast parameters)
+        self.W_f = torch.zeros_like(self.W)
+        self.h_bias_f = torch.zeros_like(self.h_bias)
+        self.v_bias_f = torch.zeros_like(self.v_bias)
 
     def sample_h(self, v):
         """Échantillonne la couche cachée à partir des visibles"""
@@ -72,7 +79,7 @@ class GaussianBinaryRBM(nn.Module):
         h0, P_h_given_v0 = self.sample_h(v0)
         
         # Phase négative (avec les échantillons persistants)
-        vk = self.persistent_v  # Utilisation des échantillons précédents
+        vk = persistent_v  # Utilisation des échantillons précédents
         for _ in range(k):
             hk, P_h_given_vk = self.sample_h(vk)
             vk = self.sample_v(hk)
@@ -82,6 +89,43 @@ class GaussianBinaryRBM(nn.Module):
             self.h_bias += lr * (P_h_given_v0 - P_h_given_vk).mean(dim=0)
             self.v_bias += lr * (v0 - vk).mean(dim=0)
             self.W += lr * (torch.matmul(P_h_given_v0.T, v0) - torch.matmul(hk.T, vk)) / v0.shape[0]
+        
+        # Mise à jour des chaînes persistantes
+        persistent_v = vk.detach()
+        return persistent_v
+    
+
+    def fast_persistent_contrastive_divergence(self, batch_data, persistent_v=None, k=1, lr=0.1):
+        batch_data = batch_data.to(self.W.device)
+        
+        # Initialisation des échantillons persistants
+        if persistent_v is None:
+            persistent_v = batch_data.clone().detach()
+        
+        # Phase positive
+        h0, P_h_given_v0 = self.sample_h(batch_data)
+        
+        # Phase négative (avec échantillons persistants et fast parameters)
+        vk = persistent_v
+        for _ in range(k):
+            hk, P_h_given_vk = self.sample_h(vk)
+            vk = self.sample_v(hk)
+        
+        # Mise à jour des poids du modèle principal
+        with torch.no_grad():
+            self.h_bias += lr * (P_h_given_v0 - P_h_given_vk).mean(dim=0)
+            self.v_bias += lr * (batch_data - vk).mean(dim=0)
+            self.W += lr * (torch.matmul(P_h_given_v0.T, batch_data) - torch.matmul(P_h_given_vk.T, vk)) / batch_data.shape[0]
+            
+            # Mise à jour des paramètres rapides
+            self.W_f += self.lr_f * ((torch.matmul(P_h_given_v0.T, batch_data) - torch.matmul(P_h_given_vk.T, vk)) / batch_data.shape[0])
+            self.h_bias_f += self.lr_f * (P_h_given_v0 - P_h_given_vk).mean(dim=0)
+            self.v_bias_f += self.lr_f * (batch_data - vk).mean(dim=0)
+            
+            # Appliquer la décroissance des paramètres rapides
+            self.W_f *= (1 - self.weight_decay_f)
+            self.h_bias_f *= (1 - self.weight_decay_f)
+            self.v_bias_f *= (1 - self.weight_decay_f)
         
         # Mise à jour des chaînes persistantes
         persistent_v = vk.detach()
