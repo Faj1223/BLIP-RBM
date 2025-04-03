@@ -9,6 +9,7 @@ class GaussianBinaryRBM(nn.Module):
         self.visible_dim = visible_dim
         self.hidden_dim = hidden_dim
         self.sigma = sigma
+        
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -36,7 +37,7 @@ class GaussianBinaryRBM(nn.Module):
 
 
     def contrastive_divergence(self, Batch_data, k=1, lr=0.3):
-
+        """ Implémente l'algorithme de CD """
         Batch_data = Batch_data.to(self.W.device)  
 
         v0 = Batch_data.detach()  # On détache du graphe de calcul
@@ -55,7 +56,36 @@ class GaussianBinaryRBM(nn.Module):
             self.h_bias += lr * (P_h_given_v0 - P_h_given_vk).mean(dim=0)
             self.v_bias += lr * (v0 - vk).mean(dim=0)
             self.W += lr * (torch.matmul(P_h_given_v0.T, v0) - torch.matmul(P_h_given_vk.T, vk)) / Batch_data.shape[0]
-    
+
+
+
+    def persistent_contrastive_divergence(self, batch_data, persistent_v = None, k=1, lr=0.1):
+        """ Implémente l'algorithme de PCD """
+        v0 = batch_data
+        v0 = v0.to(self.W.device)
+        
+        # Initialisation des chaînes persistantes si nécessaire
+        if persistent_v is None:
+            persistent_v = v0.clone().detach()
+        
+        # Phase positive (avec les données d'entraînement)
+        h0, P_h_given_v0 = self.sample_h(v0)
+        
+        # Phase négative (avec les échantillons persistants)
+        vk = self.persistent_v  # Utilisation des échantillons précédents
+        for _ in range(k):
+            hk, P_h_given_vk = self.sample_h(vk)
+            vk = self.sample_v(hk)
+        
+        # Mise à jour des poids et biais
+        with torch.no_grad():
+            self.h_bias += lr * (P_h_given_v0 - P_h_given_vk).mean(dim=0)
+            self.v_bias += lr * (v0 - vk).mean(dim=0)
+            self.W += lr * (torch.matmul(P_h_given_v0.T, v0) - torch.matmul(hk.T, vk)) / v0.shape[0]
+        
+        # Mise à jour des chaînes persistantes
+        persistent_v = vk.detach()
+        return persistent_v
 
 
     def forward(self, Batch_data, iter=1):
