@@ -4,13 +4,17 @@ from torch.func import vmap
 
 
 class GaussianBinaryRBM(nn.Module):
-    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01):
+    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01, Temp = 0.5, alpha = 0.8):
         super(GaussianBinaryRBM, self).__init__()
         self.visible_dim = visible_dim
         self.hidden_dim = hidden_dim
         self.sigma = sigma
-        
+        self.T = Temp
+        self.alpha = alpha
 
+        # transformation inverse de T
+        self.T = torch.log(0.5*(self.T+1) / (1 - 0.5(self.T+1)))
+        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Poids de connexion entre les couches visibles et cachées
@@ -29,7 +33,7 @@ class GaussianBinaryRBM(nn.Module):
 
     def sample_h(self, v):
         """Échantillonne la couche cachée à partir des visibles"""
-        p_h_given_v = torch.sigmoid(torch.matmul(v, self.W.T) + self.h_bias)
+        p_h_given_v = torch.sigmoid((torch.matmul(v, self.W.T) + self.h_bias)/self.T)
         return torch.bernoulli(p_h_given_v), p_h_given_v
 
     def sample_v(self, h):
@@ -56,6 +60,7 @@ class GaussianBinaryRBM(nn.Module):
         hk = h0
         for _ in range(k):
             vk = self.sample_v(hk)
+            vk = self.alpha * v0 + (1 - self.alpha) * vk # rappelle 
             hk, P_h_given_vk = self.sample_h(vk)
 
         # Mise à jour des poids sur tout le batch
@@ -83,6 +88,7 @@ class GaussianBinaryRBM(nn.Module):
         for _ in range(k):
             hk, P_h_given_vk = self.sample_h(vk)
             vk = self.sample_v(hk)
+            vk = self.alpha * v0 + (1 - self.alpha) * vk # rappelle
         
         # Mise à jour des poids et biais
         with torch.no_grad():
@@ -110,6 +116,7 @@ class GaussianBinaryRBM(nn.Module):
         for _ in range(k):
             hk, P_h_given_vk = self.sample_h(vk)
             vk = self.sample_v(hk)
+            vk = self.alpha * batch_data + (1 - self.alpha) * vk # rappelle
         
         # Mise à jour des poids du modèle principal
         with torch.no_grad():
