@@ -9,11 +9,11 @@ class GaussianBinaryRBM(nn.Module):
         self.visible_dim = visible_dim
         self.hidden_dim = hidden_dim
         self.sigma = sigma
-        self.T = Temp
+        self.T = torch.tensor(Temp)
         self.alpha = alpha
 
         # transformation inverse de T
-        self.T = torch.log(0.5*(self.T+1) / (1 - 0.5(self.T+1)))
+        self.T = torch.log(0.5*(self.T+1) / (1 - 0.5*(self.T+1)))
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
