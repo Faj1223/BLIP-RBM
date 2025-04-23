@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 
 class GaussianBinaryRBM(nn.Module):
-    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01, gamma = 0.01, Temp=0.5, alpha=0.8):
+    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01, gamma = 0.01, alpha=0.8):
         super(GaussianBinaryRBM, self).__init__()
         self.visible_dim = visible_dim
         self.hidden_dim = hidden_dim
@@ -14,11 +14,11 @@ class GaussianBinaryRBM(nn.Module):
         self.gamma = gamma
 
         # Device unique pour tout
+        Temp = 100
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Température sur le bon device et transformée
         self.T = torch.tensor(Temp, device=self.device)
-        self.T = torch.log(0.5 * (self.T + 1) / (1 - 0.5 * (self.T + 1)))
 
         # Paramètres principaux
         self.W = nn.Parameter(torch.randn(hidden_dim, visible_dim, device=self.device) * 0.01)
@@ -45,10 +45,10 @@ class GaussianBinaryRBM(nn.Module):
         v_sample = mean_v_given_h + self.sigma * torch.randn_like(mean_v_given_h)
         return torch.tanh(v_sample)
 
-    def recuit_simule(self, W_update, W_old, T):
+    def recuit_simule(self, W_update, W_old):
         delta_W = W_update - W_old
         correction = (W_old * delta_W).sum()
-        T_new = T + self.gamma * (1.0 / T) * correction
+        T_new = self.T + self.gamma * (1.0 / self.T) * correction
         return T_new
 
 
@@ -76,7 +76,7 @@ class GaussianBinaryRBM(nn.Module):
             W_new += lr * (torch.matmul(P_h_given_v0.T, v0) - torch.matmul(P_h_given_vk.T, vk)) / Batch_data.shape[0]
 
             W_new = W_new.clone().detach()
-            self.T = self.recuit_simule(W_new, W_old, self.T)
+            self.T = self.recuit_simule(W_new, W_old)
             self.W = W_new
 
 
