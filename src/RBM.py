@@ -77,7 +77,8 @@ class GaussianBinaryRBM(nn.Module):
 
             W_new = W_new.clone().detach()
             self.T = self.recuit_simule(W_new, W_old)
-            self.W = W_new
+            self.W.data = W_new.data
+
 
 
 
