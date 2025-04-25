@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 from torch.func import vmap
 import matplotlib.pyplot as plt
-
+import torch.nn.functional as F
+from skimage.metrics import structural_similarity as ssim
 
 class GaussianBinaryRBM(nn.Module):
-    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01, gamma = 0.01, alpha=0.8):
+    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01, gamma = 0.8, alpha=0.8):
         super(GaussianBinaryRBM, self).__init__()
         self.visible_dim = visible_dim
         self.hidden_dim = hidden_dim
@@ -14,7 +15,7 @@ class GaussianBinaryRBM(nn.Module):
         self.gamma = gamma
 
         # Device unique pour tout
-        Temp = 100
+        Temp = 1000
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Température sur le bon device et transformée
@@ -44,9 +45,24 @@ class GaussianBinaryRBM(nn.Module):
         mean_v_given_h = torch.matmul(h, self.W) + self.v_bias
         v_sample = mean_v_given_h + self.sigma * torch.randn_like(mean_v_given_h)
         return torch.tanh(v_sample)
+    
+    def compute_energy(self,W, v, h):
+        """Calcule l'énergie pour des paires (v, h) dans une RBM gaussienne-binaire."""
+        # v : (batch_size, visible_dim)
+        # h : (batch_size, hidden_dim)
 
-    def recuit_simule(self, W_update, W_old):
+        quadratic_term = ((v - self.v_bias) ** 2).sum(dim=1) / 2 
+        hidden_term = -torch.matmul(h, self.h_bias)
+        interaction_term = - (torch.matmul(h, W) * v).sum(dim=1)
+
+        energy = quadratic_term + hidden_term + interaction_term
+        return energy.mean()
+
+
+
+    def recuit_simule(self, W_update, W_old, v, h): # à revoir
         delta_W = W_update - W_old
+        delta_energy = self.compute_energy(W_update, v, h) - self.compute_energy(W_old, v, h)
         correction = (W_old * delta_W).sum()
         T_new = self.T + self.gamma * (1.0 / self.T) * correction
         return T_new
@@ -66,22 +82,19 @@ class GaussianBinaryRBM(nn.Module):
             vk = self.alpha * v0 + (1 - self.alpha) * vk
             hk, P_h_given_vk = self.sample_h(vk, T)
 
+        v_bias_initial = self.v_bias
         # Phase de mise à jour des poids
         with torch.no_grad():
             W_old = self.W.clone().detach()
             W_new = W_old.clone()
 
             self.h_bias += lr * (P_h_given_v0 - P_h_given_vk).mean(dim=0)
-            self.v_bias += lr * (v0 - vk).mean(dim=0)
+            self.v_bias += lr * (-(v0-v_bias_initial).b + (vk-self.v_bias)).mean(dim=0)
             W_new += lr * (torch.matmul(P_h_given_v0.T, v0) - torch.matmul(P_h_given_vk.T, vk)) / Batch_data.shape[0]
 
             W_new = W_new.clone().detach()
             self.T = self.recuit_simule(W_new, W_old)
             self.W.data = W_new.data
-
-
-
-
 
 
     def persistent_contrastive_divergence(self, batch_data, persistent_v = None, k=1, lr=0.1):
@@ -122,12 +135,12 @@ class GaussianBinaryRBM(nn.Module):
             persistent_v = batch_data.clone().detach()
         
         # Phase positive
-        h0, P_h_given_v0 = self.sample_h(batch_data)
+        h0, P_h_given_v0 = self.sample_h(batch_data,self.T)
         
         # Phase négative (avec échantillons persistants et fast parameters)
         vk = persistent_v
         for _ in range(k):
-            hk, P_h_given_vk = self.sample_h(vk)
+            hk, P_h_given_vk = self.sample_h(vk, self.T)
             vk = self.sample_v(hk)
             vk = self.alpha * batch_data + (1 - self.alpha) * vk # rappelle
         
@@ -175,16 +188,34 @@ class GaussianBinaryRBM(nn.Module):
         plt.ylabel("Température T")
         plt.grid(True)
         plt.show()
-   
-
-
 
     def forward(self, Batch_data, iter=1):
         """Passe avant récursif appliqué à un batch de données"""
         for _ in range(iter):
-            h, _ = self.sample_h(Batch_data)  # Échantillonner pour la couche cachée
+            h, _ = self.sample_h(Batch_data,self.T)  # Échantillonner pour la couche cachée
             Batch_data_pred = self.sample_v(h)  # Ré-échantillonner pour la couche visible
         return Batch_data_pred
+    
+
+    # Metrics d'évaluation de l'erreur de reconstruction
+
+    def cosine_similarity(self, v_true, v_reconstructed):
+        """similatité cosinus"""
+        v_true = F.normalize(v_true, dim=1)
+        v_reconstructed = F.normalize(v_reconstructed, dim=1)
+        return (v_true * v_reconstructed).sum(dim=1).mean()
+
+
+    def compute_ssim(self, v_true, v_reconstructed):
+        """"Structural Similarity Index (SSIM)"""
+        v_true = v_true.detach().cpu().numpy()
+        v_reconstructed = v_reconstructed.detach().cpu().numpy()
+        scores = []
+        for i in range(v_true.shape[0]):
+            score = ssim(v_true[i], v_reconstructed[i], data_range=1.0)
+            scores.append(score)
+        return sum(scores) / len(scores)
+
 
       
 
