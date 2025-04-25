@@ -64,7 +64,7 @@ class GaussianBinaryRBM(nn.Module):
         delta_W = W_update - W_old
         delta_energy = self.compute_energy(W_update, v, h) - self.compute_energy(W_old, v, h)
         correction = (W_old * delta_W).sum()
-        T_new = self.T + self.gamma * (1.0 / self.T) * correction
+        T_new = self.T + self.gamma * (1.0 / self.T) * (delta_energy / correction)
         return T_new
 
 
@@ -93,7 +93,7 @@ class GaussianBinaryRBM(nn.Module):
             W_new += lr * (torch.matmul(P_h_given_v0.T, v0) - torch.matmul(P_h_given_vk.T, vk)) / Batch_data.shape[0]
 
             W_new = W_new.clone().detach()
-            self.T = self.recuit_simule(W_new, W_old)
+            self.T = self.recuit_simule(W_new, W_old, vk, hk)
             self.W.data = W_new.data
 
 
