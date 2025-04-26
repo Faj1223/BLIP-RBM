@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from skimage.metrics import structural_similarity as ssim
 
 class GaussianBinaryRBM(nn.Module):
-    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01, gamma = 0.8, alpha=0.8):
+    def __init__(self, visible_dim, hidden_dim, sigma=0.1, lr_f=0.1, weight_decay_f=0.01, gamma = 10, alpha=0.8):
         super(GaussianBinaryRBM, self).__init__()
         self.visible_dim = visible_dim
         self.hidden_dim = hidden_dim
@@ -89,7 +89,7 @@ class GaussianBinaryRBM(nn.Module):
             W_new = W_old.clone()
 
             self.h_bias += lr * (P_h_given_v0 - P_h_given_vk).mean(dim=0)
-            self.v_bias += lr * (-(v0-v_bias_initial).b + (vk-self.v_bias)).mean(dim=0)
+            self.v_bias += lr * (-(v0-v_bias_initial) + (vk-self.v_bias)).mean(dim=0)
             W_new += lr * (torch.matmul(P_h_given_v0.T, v0) - torch.matmul(P_h_given_vk.T, vk)) / Batch_data.shape[0]
 
             W_new = W_new.clone().detach()
