@@ -165,29 +165,35 @@ class GaussianBinaryRBM(nn.Module):
         return persistent_v
     
 
-    def train(self, data, epochs=300):
-        """Entraîne le modèle RBM avec recuit simulé sur plusieurs epochs"""
+    def train(self, data, batch_size=1000, epochs=200, shuffle=True, verbose=True, plot=True):
+        """Entraîne le modèle RBM par lot (mini-batchs) avec recuit simulé."""
 
+        n_samples = data.size(0)
         self.T_history = []
-        for epoch in range(epochs):
-            # Shuffle des données
-            idx = torch.randperm(data.size(0))
-            shuffled_data = data[idx]
 
-            # Applique le contraste de divergence
-            self.contrastive_divergence(shuffled_data)
+        for epoch in range(epochs):
+            if shuffle:
+                indices = torch.randperm(n_samples)
+                data = data[indices]
+
+            for i in range(0, n_samples, batch_size):
+                batch = data[i:i + batch_size]
+                self.contrastive_divergence(batch)
+
+            # Enregistrement de la température (ou autre métrique)
             self.T_history.append(self.T.item())
 
-            # Évolution de la température
-            if epoch % 50 == 0 or epoch == epochs - 1:
+            if verbose and (epoch % 50 == 0 or epoch == epochs - 1):
                 print(f"Epoch {epoch+1}/{epochs} - Température actuelle : {self.T:.4f}")
 
-        plt.plot(self.T_history)
-        plt.title("Évolution de la température")
-        plt.xlabel("Itération")
-        plt.ylabel("Température T")
-        plt.grid(True)
-        plt.show()
+        if plot:
+            plt.plot(self.T_history)
+            plt.title("Évolution de la température")
+            plt.xlabel("Époch")
+            plt.ylabel("Température T")
+            plt.grid(True)
+            plt.show()
+
 
     def forward(self, Batch_data, iter=1):
         """Passe avant récursif appliqué à un batch de données"""
