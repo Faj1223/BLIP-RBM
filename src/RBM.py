@@ -40,6 +40,7 @@ class GaussianBinaryRBM(nn.Module):
         p_h_given_v = torch.sigmoid((torch.matmul(v, self.W.T) + self.h_bias) / T)
         return torch.bernoulli(p_h_given_v), p_h_given_v
 
+
     def sample_v(self, h):
         """Échantillonne la couche visible à partir des cachées (distribution gaussienne)"""
         mean_v_given_h = torch.matmul(h, self.W) + self.v_bias
@@ -50,6 +51,12 @@ class GaussianBinaryRBM(nn.Module):
         """Calcule l'énergie pour des paires (v, h) dans une RBM gaussienne-binaire."""
         # v : (batch_size, visible_dim)
         # h : (batch_size, hidden_dim)
+
+
+        assert v.device == self.v_bias.device, "v et v_bias sur des devices différents"
+        assert h.device == self.h_bias.device, "h et h_bias sur des devices différents"
+        assert W.device == h.device == v.device, "W, h et v doivent être sur le même device"
+
 
         quadratic_term = ((v - self.v_bias) ** 2).sum(dim=1) / 2 
         hidden_term = -torch.matmul(h, self.h_bias)
@@ -66,7 +73,7 @@ class GaussianBinaryRBM(nn.Module):
         correction = (W_old * delta_W).sum()
         T_new = self.T + self.gamma * (1.0 / self.T) * (delta_energy / correction)
         return T_new
-
+    
 
     def contrastive_divergence(self, Batch_data, k=1, lr=0.3):
         """Implémente l'algorithme de CD avec recuit simulé"""
